@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { RunProgress } from './RunProgress';
 import type { RunError, RunStatus, StepState } from '@/lib/run-progress/state';
@@ -336,5 +336,300 @@ describe('RunProgress — StepList (§6.4)', () => {
     expect(future.style.opacity).toBe('0');
     // Parked one slot below the current line — i.e. translateY(+20px).
     expect(future.style.transform).toBe('translateY(20px)');
+  });
+});
+
+describe('RunProgress — accessibility §7.1 (progressbar ARIA)', () => {
+  test('exposes role=progressbar with valuemin/max and a rounded valuenow', () => {
+    render(<RunProgress {...baseProps('running')} progress={0.732} />);
+    const bar = screen.getByRole('progressbar');
+    expect(bar).toHaveAttribute('aria-valuemin', '0');
+    expect(bar).toHaveAttribute('aria-valuemax', '100');
+    expect(bar).toHaveAttribute('aria-valuenow', '73');
+  });
+
+  test('aria-valuetext stays stable across per-frame progress changes (§7.1 AC)', () => {
+    // The bar updates `aria-valuenow` every rAF, but `aria-valuetext` should
+    // only change when something the screen reader cares about (status / step)
+    // changes — otherwise polite SRs would re-announce continuously.
+    const { rerender } = render(<RunProgress {...baseProps('running')} progress={0.1} />);
+    const baseline = screen.getByRole('progressbar').getAttribute('aria-valuetext');
+
+    for (const p of [0.111, 0.222, 0.333, 0.444, 0.555, 0.666]) {
+      rerender(<RunProgress {...baseProps('running')} progress={p} />);
+      expect(screen.getByRole('progressbar').getAttribute('aria-valuetext')).toBe(baseline);
+    }
+  });
+
+  test('aria-valuetext updates when the active step changes', () => {
+    const steps = makeSteps();
+    const { rerender } = render(
+      <RunProgress
+        status="running"
+        steps={steps}
+        currentStepIndex={1}
+        progress={0.3}
+        elapsedMs={0}
+      />
+    );
+    const beforeText = screen.getByRole('progressbar').getAttribute('aria-valuetext');
+    expect(beforeText).toMatch(/Reading metrics/);
+
+    const advanced = steps.map(
+      (s, i): StepState =>
+        i === 1
+          ? { ...s, status: 'complete', progress: 1, endedAt: 1500 }
+          : i === 2
+            ? { ...s, status: 'running', progress: 0.2, startedAt: 1500 }
+            : s
+    );
+    rerender(
+      <RunProgress
+        status="running"
+        steps={advanced}
+        currentStepIndex={2}
+        progress={0.55}
+        elapsedMs={2000}
+      />
+    );
+    const afterText = screen.getByRole('progressbar').getAttribute('aria-valuetext');
+    expect(afterText).toMatch(/Contacting API/);
+    expect(afterText).not.toBe(beforeText);
+  });
+
+  test('aria-valuetext varies by status (idle / complete / error / stalled)', () => {
+    const { rerender } = render(<RunProgress {...baseProps('idle')} currentStepIndex={-1} />);
+    expect(screen.getByRole('progressbar').getAttribute('aria-valuetext')).toBe('Not started');
+
+    rerender(<RunProgress {...baseProps('complete')} progress={1} />);
+    expect(screen.getByRole('progressbar').getAttribute('aria-valuetext')).toBe('Complete');
+
+    rerender(<RunProgress {...baseProps('error')} error={{ message: 'boom', stepIndex: 1 }} />);
+    expect(screen.getByRole('progressbar').getAttribute('aria-valuetext')).toMatch(/Error/);
+
+    rerender(<RunProgress {...baseProps('stalled')} />);
+    expect(screen.getByRole('progressbar').getAttribute('aria-valuetext')).toMatch(
+      /Waiting for server/
+    );
+  });
+});
+
+describe('RunProgress — accessibility §7.2 (polite live region)', () => {
+  test('renders an sr-only aria-live=polite region with aria-atomic=true', () => {
+    render(<RunProgress {...baseProps('running')} />);
+    const live = screen.getByTestId('run-progress-live-region');
+    expect(live).toHaveAttribute('aria-live', 'polite');
+    expect(live).toHaveAttribute('aria-atomic', 'true');
+    expect(live.className).toMatch(/\bsr-only\b/);
+  });
+
+  test('announces the current step when running', () => {
+    render(<RunProgress {...baseProps('running')} />);
+    const live = screen.getByTestId('run-progress-live-region');
+    expect(live.textContent).toBe('Step 2 of 3: Reading metrics…');
+  });
+
+  test('is empty while idle so SRs do not announce on first paint', () => {
+    render(<RunProgress {...baseProps('idle')} currentStepIndex={-1} />);
+    expect(screen.getByTestId('run-progress-live-region').textContent).toBe('');
+  });
+
+  test('announces "Run complete" on complete', () => {
+    render(<RunProgress {...baseProps('complete')} progress={1} />);
+    expect(screen.getByTestId('run-progress-live-region').textContent).toBe('Run complete');
+  });
+
+  test('stays empty on error so role="alert" wins cleanly (no double announcement)', () => {
+    render(<RunProgress {...baseProps('error')} error={{ message: 'boom', stepIndex: 1 }} />);
+    expect(screen.getByTestId('run-progress-live-region').textContent).toBe('');
+    expect(screen.getByRole('alert')).toHaveTextContent('boom');
+  });
+
+  test('announces the stall with the active step on stalled', () => {
+    render(<RunProgress {...baseProps('stalled')} />);
+    expect(screen.getByTestId('run-progress-live-region').textContent).toBe(
+      'Waiting for server on step 2 of 3: Reading metrics…'
+    );
+  });
+
+  test('content does not update on rAF-like progress/elapsedMs churn (§7.2 AC)', () => {
+    const { rerender } = render(
+      <RunProgress {...baseProps('running')} progress={0.1} elapsedMs={0} />
+    );
+    const live = screen.getByTestId('run-progress-live-region');
+    const baseline = live.textContent;
+
+    let mutations = 0;
+    const observer = new MutationObserver(() => {
+      mutations++;
+    });
+    observer.observe(live, { childList: true, subtree: true, characterData: true });
+
+    try {
+      for (let i = 0; i < 20; i++) {
+        const p = 0.1 + i * 0.04;
+        rerender(<RunProgress {...baseProps('running')} progress={p} elapsedMs={i * 16} />);
+      }
+    } finally {
+      observer.disconnect();
+    }
+
+    expect(mutations).toBe(0);
+    expect(live.textContent).toBe(baseline);
+  });
+
+  test('content updates when currentStepIndex changes', () => {
+    const steps = makeSteps();
+    const { rerender } = render(
+      <RunProgress
+        status="running"
+        steps={steps}
+        currentStepIndex={1}
+        progress={0.3}
+        elapsedMs={0}
+      />
+    );
+    expect(screen.getByTestId('run-progress-live-region').textContent).toBe(
+      'Step 2 of 3: Reading metrics…'
+    );
+
+    rerender(
+      <RunProgress
+        status="running"
+        steps={steps}
+        currentStepIndex={2}
+        progress={0.55}
+        elapsedMs={1500}
+      />
+    );
+    expect(screen.getByTestId('run-progress-live-region').textContent).toBe(
+      'Step 3 of 3: Contacting API…'
+    );
+  });
+
+  test('content updates when status changes (running → complete)', () => {
+    const { rerender } = render(<RunProgress {...baseProps('running')} />);
+    expect(screen.getByTestId('run-progress-live-region').textContent).toBe(
+      'Step 2 of 3: Reading metrics…'
+    );
+
+    rerender(<RunProgress {...baseProps('complete')} progress={1} />);
+    expect(screen.getByTestId('run-progress-live-region').textContent).toBe('Run complete');
+  });
+});
+
+describe('RunProgress — accessibility §7.3 (prefers-reduced-motion)', () => {
+  /**
+   * Every place the component animates (icon pulse, step-list slide+fade,
+   * stalled bar pulse, stalled-badge dot pulse) MUST gate the animation
+   * behind the `motion-safe:` Tailwind variant, which compiles to a
+   * `@media (prefers-reduced-motion: no-preference)` block. Toggling the OS
+   * setting flips the media query and the browser drops the rules without
+   * needing a remount.
+   *
+   * We assert the variant is present on every animated element so a future
+   * "just animate it" PR can't silently regress the a11y contract.
+   */
+  test('icon pulse only runs under motion-safe (running state)', () => {
+    render(<RunProgress {...baseProps('running')} />);
+    const img = screen.getByTestId('run-progress-icon').querySelector('img')!;
+    expect(img.className).toMatch(/motion-safe:animate-pulse/);
+    expect(img.className).not.toMatch(/(?<!motion-safe:)animate-pulse/);
+  });
+
+  test('step-list rows transition only under motion-safe', () => {
+    render(<RunProgress {...baseProps('running')} />);
+    const rows = screen.getByTestId('run-progress-step-list').querySelectorAll('[data-step-index]');
+    expect(rows.length).toBeGreaterThan(0);
+    rows.forEach((row) => {
+      expect(row.className).toMatch(/motion-safe:transition/);
+      expect(row.className).toMatch(/motion-safe:duration-/);
+      expect(row.className).not.toMatch(/(?<!motion-safe:)transition-/);
+    });
+  });
+
+  test('stalled bar fill pulse is gated on motion-safe (running state has no pulse)', () => {
+    const { rerender } = render(<RunProgress {...baseProps('stalled')} />);
+    const stalledFill = screen.getByTestId('run-progress-bar-fill');
+    expect(stalledFill.className).toMatch(/motion-safe:animate-pulse/);
+    expect(stalledFill.className).not.toMatch(/(?<!motion-safe:)animate-pulse/);
+
+    rerender(<RunProgress {...baseProps('running')} />);
+    expect(screen.getByTestId('run-progress-bar-fill').className).not.toMatch(/animate-pulse/);
+  });
+
+  test('stalled badge dot pulse is gated on motion-safe', () => {
+    render(<RunProgress {...baseProps('stalled')} />);
+    const badge = screen.getByTestId('run-progress-stalled-badge');
+    // The pulsing dot is the only animated child of the badge.
+    const dot = badge.querySelector('span[aria-hidden="true"]')!;
+    expect(dot.className).toMatch(/motion-safe:animate-pulse/);
+    expect(dot.className).not.toMatch(/(?<!motion-safe:)animate-pulse/);
+  });
+
+  describe('matchMedia integration (reactive snap)', () => {
+    // The smoothing layer (`useSmoothProgress`) reacts to `matchMedia` so the
+    // OS toggle takes effect live. We can't drive that from a jsdom test of
+    // <RunProgress /> (it takes `progress` as a prop) — but we can at least
+    // verify the matchMedia query string our hook listens to is the canonical
+    // one and that <RunProgress /> doesn't crash when matchMedia is reduced.
+    const listeners = new Set<(e: MediaQueryListEvent) => void>();
+    let mqMatches = true;
+    const original = (window as { matchMedia?: typeof window.matchMedia }).matchMedia;
+
+    beforeEach(() => {
+      listeners.clear();
+      mqMatches = true; // simulate reduced-motion ON
+      // jsdom doesn't ship `matchMedia`, so we install (or replace) it directly
+      // rather than spying. Restored in afterEach.
+      Object.defineProperty(window, 'matchMedia', {
+        configurable: true,
+        writable: true,
+        value: (query: string): MediaQueryList => {
+          expect(query).toBe('(prefers-reduced-motion: reduce)');
+          return {
+            matches: mqMatches,
+            media: query,
+            onchange: null,
+            addEventListener: (_: string, cb: (e: MediaQueryListEvent) => void) => {
+              listeners.add(cb);
+            },
+            removeEventListener: (_: string, cb: (e: MediaQueryListEvent) => void) => {
+              listeners.delete(cb);
+            },
+            addListener: () => {},
+            removeListener: () => {},
+            dispatchEvent: () => true,
+          } as unknown as MediaQueryList;
+        },
+      });
+    });
+
+    afterEach(() => {
+      if (original === undefined) {
+        // jsdom default — wipe so we don't pollute other suites.
+        delete (window as { matchMedia?: typeof window.matchMedia }).matchMedia;
+      } else {
+        Object.defineProperty(window, 'matchMedia', {
+          configurable: true,
+          writable: true,
+          value: original,
+        });
+      }
+    });
+
+    test('renders fine when prefers-reduced-motion is reduced (no crashes, no extra DOM)', () => {
+      render(<RunProgress {...baseProps('running')} />);
+      expect(screen.getByTestId('run-progress')).toBeInTheDocument();
+      // Simulate the user flipping the OS toggle back to "no-preference":
+      // the listener should be invoked without throwing.
+      act(() => {
+        mqMatches = false;
+        for (const cb of listeners) {
+          cb({ matches: false, media: '(prefers-reduced-motion: reduce)' } as MediaQueryListEvent);
+        }
+      });
+      expect(screen.getByTestId('run-progress')).toBeInTheDocument();
+    });
   });
 });

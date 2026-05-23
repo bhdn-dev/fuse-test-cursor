@@ -149,15 +149,15 @@ Legend: `XS` ≈ <30 min · `S` ≈ <1h · `M` ≈ 1–2h · `L` ≈ half day
 
 ## 7. Accessibility
 
-- [ ] **7.1 `role="progressbar"` with correct ARIA** — `XS`
+- [x] **7.1 `role="progressbar"` with correct ARIA** — `XS`
   - S: `aria-valuenow/min/max`, `aria-valuetext` updated only on step boundaries (not every ms).
   - AC: axe / Storybook a11y addon passes.
 
-- [ ] **7.2 `aria-live="polite"` region for step transitions** — `S`
+- [x] **7.2 `aria-live="polite"` region for step transitions** — `S`
   - S: Separate offscreen `<span>` updated only when `currentStepIndex` or `status` changes — NOT on every rAF tick.
   - AC: VoiceOver test: announces step transitions, not timer ticks.
 
-- [ ] **7.3 `prefers-reduced-motion` honoured everywhere** — `XS`
+- [x] **7.3 `prefers-reduced-motion` honoured everywhere** — `XS`
   - S: Icon animation, bar interpolation, list transitions all check the media query (CSS or `matchMedia`).
   - AC: Toggling OS setting visibly disables animations.
 

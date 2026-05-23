@@ -147,3 +147,21 @@ Three cues stack to make `stalled` unambiguous against the neighbouring states (
 3. **Neutral ring around the icon** (vs. red on `error`) so the leftmost glance at the card already discriminates `stalled` from `error` without colour-only signalling.
 
 The timer **freezes** on stall (see §5 above) — the stall pill carries the "we've been waiting" signal so the timer doesn't have to lie about run duration.
+
+### Accessibility (§7)
+
+Three layers, each responsible for one signal:
+
+1. **`role="progressbar"`** on the bar exposes `aria-valuemin=0`, `aria-valuemax=100`, and a `aria-valuenow` rounded from the smoothed value. The displayed percentage is what changes every animation frame — and that's _fine_, because `aria-valuenow` is a number-valued attribute and AT typically polls it rather than re-announcing on every tick. We additionally set **`aria-valuetext`** with a human-readable label (e.g. _"Step 2 of 7: Reading metrics…"_); this string is a pure function of `(status, currentStepIndex, label, stepCount)`, so it only changes at step boundaries and never on a rAF tick. Verified by a unit test that rerenders with varying `progress` and asserts `aria-valuetext` stays identical.
+2. **`aria-live="polite"` region** (a visually hidden `sr-only` `<span>` with `aria-atomic="true"`) carries the canonical step-transition announcement. Its content is derived from the same `(status, step, stepCount)` tuple — never from `progress`, never from `elapsedMs` — and React's DOM diffing only writes the node when the string changes, so a `MutationObserver` over 20 frames of `progress`/`elapsedMs` churn records **zero** mutations (also covered by a unit test). The region stays empty in the `error` state because the inline `ErrorPanel` already has `role="alert"`; we'd rather have one assertive announcement than fight a polite one against an assertive one.
+3. **`prefers-reduced-motion`** is honoured in two complementary ways:
+   - **CSS-level** — every animated class in the component (`animate-pulse` on the icon, the stalled bar fill, and the stalled badge dot; `transition-*` / `duration-*` / `ease-*` on the step-list rows) is gated behind Tailwind's **`motion-safe:`** variant, which compiles to `@media (prefers-reduced-motion: no-preference)`. Toggling the OS setting collapses the rules without a remount.
+   - **JS-level** — `useSmoothProgress` subscribes to `window.matchMedia('(prefers-reduced-motion: reduce)')` and, while reduced motion is on, **snaps** the displayed value to the target on every render and never schedules an rAF frame. The `change` listener means flipping the OS toggle takes effect live.
+
+The timer continues to update every frame even with reduced motion — that's a digit readout, not motion — but it lives outside any `aria-live` region (see §5), so a screen reader treats it as static text that the user can navigate to on demand instead of an announcement stream.
+
+What this buys us:
+
+- **Colour-independent state.** Each status has a non-colour cue (motion, badge, ring, alert), so colourblind users get full information.
+- **Motion-independent state.** With reduced motion on, the bar still moves (it just snaps each step), the icon still gets a ring on error / stall, the stall badge still renders (just static), and the live region still announces.
+- **Quiet by default.** The timer never announces; the bar's text only changes on step boundaries; the polite region only fires on step / status transitions; the error region fires once on error. No per-frame chatter.

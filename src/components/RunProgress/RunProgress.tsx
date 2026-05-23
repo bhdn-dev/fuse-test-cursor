@@ -96,10 +96,65 @@ export function RunProgress({
         <ErrorPanel error={error} {...(onRetry ? { onRetry } : {})} />
       ) : null}
 
+      <LiveRegion status={status} step={activeStep} stepCount={steps.length} />
+
       {/* Timer (bottom-right per PRD §2 / §5.3) */}
       <Timer elapsedMs={elapsedMs} className="self-end" />
     </section>
   );
+}
+
+/**
+ * Polite screen-reader announcer for step transitions (§7.2).
+ *
+ * Two rules govern what lives in here:
+ *
+ * 1. **Only step-boundary signal.** The text is a pure function of
+ *    `(status, step.index, step.label, stepCount)` — none of which change on
+ *    every rAF tick. The bar's `aria-valuenow` updates every frame, but the
+ *    `aria-valuetext` we expose on the bar (and the string in this region) do
+ *    not, so screen readers don't get spammed with per-millisecond chatter.
+ * 2. **No double-announcing errors.** {@link ErrorPanel} already carries
+ *    `role="alert"` (assertive); duplicating the same string here as polite
+ *    would either step on the alert or queue a second utterance. We leave
+ *    this region blank in `error` so the alert wins cleanly.
+ *
+ * The element is visually hidden via `sr-only` so it never affects layout.
+ * `aria-atomic="true"` makes assistive tech re-read the full sentence
+ * whenever it changes, instead of trying to diff sub-words.
+ */
+function LiveRegion({
+  status,
+  step,
+  stepCount,
+}: {
+  status: RunStatus;
+  step: StepState | null;
+  stepCount: number;
+}) {
+  return (
+    <span
+      data-testid="run-progress-live-region"
+      className="sr-only"
+      aria-live="polite"
+      aria-atomic="true"
+    >
+      {liveRegionMessage(status, step, stepCount)}
+    </span>
+  );
+}
+
+function liveRegionMessage(status: RunStatus, step: StepState | null, stepCount: number): string {
+  if (status === 'idle') return '';
+  if (status === 'complete') return 'Run complete';
+  // error: handled by the role="alert" ErrorPanel — see LiveRegion docstring.
+  if (status === 'error') return '';
+  if (status === 'stalled') {
+    return step
+      ? `Waiting for server on step ${step.index + 1} of ${stepCount}: ${step.label}`
+      : 'Waiting for server';
+  }
+  return step ? `Step ${step.index + 1} of ${stepCount}: ${step.label}` : '';
 }
 
 /**
@@ -367,6 +422,15 @@ function fillBackgroundFor(status: RunStatus): string {
   return `linear-gradient(to right, ${from}, ${via}, ${to})`;
 }
 
+/**
+ * Human-readable `aria-valuetext` for the bar (§7.1).
+ *
+ * Deliberately a pure function of `(status, step, stepCount)` — it does
+ * **not** take `progress` as input. The displayed percentage is conveyed by
+ * `aria-valuenow`, which updates every rAF tick; this string updates only
+ * when the step index, step label, or run status changes, so screen readers
+ * don't get a fresh announcement on every frame.
+ */
 function ariaValueText(
   status: RunStatus,
   step: StepState | null,
