@@ -51,6 +51,8 @@ export interface UseRunProgressResult {
   start: (mode: RunMode) => void;
   /** Abort the in-flight stream and stop the stall loop. State is preserved. */
   stop: () => void;
+  /** Abort any in-flight stream and clear all derived state back to `idle`. */
+  reset: () => void;
 }
 
 type Action =
@@ -92,6 +94,12 @@ export function useRunProgress(): UseRunProgressResult {
     }
     cancelStallLoop();
   }, [cancelStallLoop]);
+
+  const reset = useCallback(() => {
+    stop();
+    dispatch({ type: 'reset' });
+    setEvents([]);
+  }, [stop]);
 
   // rAF stall loop. `markStalled` is idempotent, and `useReducer` bails out
   // on referential equality, so once we're already `stalled` (or no longer
@@ -167,6 +175,7 @@ export function useRunProgress(): UseRunProgressResult {
     events,
     start,
     stop,
+    reset,
   };
 }
 

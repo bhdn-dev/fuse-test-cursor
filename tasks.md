@@ -165,14 +165,14 @@ Legend: `XS` ≈ <30 min · `S` ≈ <1h · `M` ≈ 1–2h · `L` ≈ half day
 
 ## 8. Demo page — wiring it together
 
-- [ ] **8.1 Build trigger UI on `src/app/page.tsx`** — `S`
+- [x] **8.1 Build trigger UI on `src/app/page.tsx`** — `S`
   - S: Three buttons (Happy Path / Error / Stall), one Reset/Stop button. Buttons disabled while running where appropriate.
   - AC: Re-running mid-flight cleanly cancels prior stream.
 
-- [ ] **8.2 Connect `useRunProgress` → `RunProgress`** — `S`
+- [x] **8.2 Connect `useRunProgress` → `RunProgress`** — `S`
   - AC: End-to-end manual test of all three modes works in the browser.
 
-- [ ] **8.3 Visual polish pass** — `S`
+- [x] **8.3 Visual polish pass** — `S`
   - S: Card chrome (shadow, rounded corners, padding), responsive width, dark-mode friendly.
   - AC: Looks "polished" per PRD tone; reviewed against PRD bullets.
 
