@@ -105,15 +105,15 @@ Legend: `XS` ≈ <30 min · `S` ≈ <1h · `M` ≈ 1–2h · `L` ≈ half day
 
 ## 5. Live `MM:SS.ms` timer
 
-- [ ] **5.1 Implement `useElapsed` hook (rAF-based)** — `S`
+- [x] **5.1 Implement `useElapsed` hook (rAF-based)** — `S`
   - S: Returns `elapsedMs` since `startedAt`; stops when `status` is `complete | error`; keeps last value on `stalled` per design choice (document in README).
   - AC: No `setInterval`; no work when document is hidden (use `visibilitychange`).
 
-- [ ] **5.2 `formatMMSSms(ms)` util + tests** — `XS`
+- [x] **5.2 `formatMMSSms(ms)` util + tests** — `XS`
   - S: Always 2-digit minutes, 2-digit seconds, 2-digit hundredths (e.g. `01:23.45`).
   - AC: Boundary cases tested (0, 59.999s, 60s, >60min).
 
-- [ ] **5.3 Render timer bottom-right of card** — `XS`
+- [x] **5.3 Render timer bottom-right of card** — `XS`
   - S: Positioned below the logo stack as per PRD; bar width reduced to make room.
   - AC: Matches PRD layout description in screenshot/Storybook.
 

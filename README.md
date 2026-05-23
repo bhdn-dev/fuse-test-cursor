@@ -76,6 +76,7 @@ src/lib/run-progress/useRunProgress.ts
 src/lib/run-progress/useSmoothProgress.ts
 src/lib/run-progress/useElapsed.ts
 src/lib/run-progress/format.ts      # formatMMSSms
+src/components/RunProgress/Timer.tsx
 src/components/RunProgress/RunProgress.tsx
 src/components/RunProgress/RunProgress.stories.tsx
 public/fuse-icon.png                # left-icon asset
@@ -101,7 +102,7 @@ next = current + (target - current) * (1 - exp(-k * dt))
 
 Why this shape:
 
-- **Naturally adaptive.** A large gap (e.g. a step finishes early and `target` jumps from `0.30` to `0.42`) produces a proportionally larger per-frame step, so the bar visibly *catches up* without a setInterval or scheduled "boost".
+- **Naturally adaptive.** A large gap (e.g. a step finishes early and `target` jumps from `0.30` to `0.42`) produces a proportionally larger per-frame step, so the bar visibly _catches up_ without a setInterval or scheduled "boost".
 - **No overshoot.** Each frame moves a fraction of the remaining distance, so `progress` asymptotes to `target` from below — we additionally clamp to `[current, target]` to be defensive against rounding.
 - **Monotonic.** We clamp `next >= current` even if `target` were to regress (it shouldn't, because the reducer never lowers per-step progress, but the smoothing layer enforces it independently so it composes safely with any future producer).
 - **Frame-rate independent.** `dt` is taken from the rAF callback's timestamp and capped at 100 ms so a backgrounded tab doesn't trigger a giant jump on resume.
@@ -118,3 +119,21 @@ Reduced motion:
 - When `(prefers-reduced-motion: reduce)` matches, the hook snaps to `target` on every render and never starts an rAF loop. The media query is observed, so toggling the OS setting takes effect live without a remount.
 
 Default decay rate is `k = 6` per second (≈115 ms half-life), tuned to feel responsive without looking nervous. Consumers can override via the `decayRate` option — useful in tests, where a much higher rate makes assertions easy.
+
+### Live `MM:SS.ms` timer (§5)
+
+The timer is a thin three-piece split:
+
+- **`useElapsed({ startedAt, endedAt, status })`** — rAF-driven hook that returns the live `Date.now() - startedAt` and snaps to the final value on terminal status.
+- **`formatMMSSms(ms)`** — pure formatter, always `MM:SS.cc` (see note below on the `.ms` label).
+- **`<Timer elapsedMs />`** — pure presentational component using `font-mono tabular-nums` so the digits don't reflow as values change. Positioned by the parent via `className` (bottom-right of the card per PRD §2).
+
+A few decisions worth calling out:
+
+- **The fractional field is hundredths of a second, not milliseconds.** The PRD calls this "MM:SS.ms" and shows examples like `01:23.45` — two digits, so it's centiseconds. We truncate (not round) the cs field so the displayed value never reads ahead of `elapsedMs`, matching the rAF hook's monotonic guarantee.
+- **Stalled freezes the timer.** When the run goes `stalled` we _stop incrementing_ the elapsed value rather than continue counting. Surfacing "we've been waiting on the server for 7s" via the timer would mislead the user into thinking the _run_ is taking that long; the stall badge (§6.5) carries that signal instead. Recovery to `running` snaps the timer to the real wall-clock elapsed on the next frame.
+- **Terminal snaps to `endedAt - startedAt`.** Both `complete` and `error` pin the displayed value to the server-side end timestamp (recorded by the reducer on the terminating event) rather than whatever the last rAF frame happened to write. That keeps the final readout stable across viewers and reliably reads `00:30.00` instead of `00:30.07`.
+- **No work when the tab is hidden.** rAF already throttles in background tabs, but the hook also listens to `visibilitychange` and explicitly cancels the loop on hidden / restarts on visible — and snaps to the wall clock on resume rather than accumulating frame-by-frame drift. (No `setInterval` anywhere, per PRD.)
+- **Monotonic.** A wall-clock regression (NTP correction, manual time change) can never make the timer go backward.
+- **`startedAt` is set lazily client-side** by the reducer on the first event (§3.4), so the initial SSR render is always `0` and there's no hydration mismatch.
+- **A11y.** The timer is rendered as normal text _outside_ any `aria-live` region (see §7.2). Screen readers can navigate to it on demand, but the per-frame digit changes never trigger a polite announcement.

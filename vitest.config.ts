@@ -11,14 +11,22 @@ import { playwright } from '@vitest/browser-playwright';
 const dirname =
   typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 
+// Mirror the `@/*` tsconfig path alias so tests can use the same import
+// shape as the app code (`@/lib/...`, `@/components/...`).
+const alias = {
+  '@': path.resolve(dirname, 'src'),
+};
+
 // More info at: https://storybook.js.org/docs/next/writing-tests/integrations/vitest-addon
 export default defineConfig({
+  resolve: { alias },
   test: {
     projects: [
       // Unit / integration tests with React Testing Library
       {
         extends: true,
         plugins: [react()],
+        resolve: { alias },
         test: {
           name: 'unit',
           environment: 'jsdom',
@@ -32,6 +40,7 @@ export default defineConfig({
       {
         extends: true,
         plugins: [storybookTest({ configDir: path.join(dirname, '.storybook') })],
+        resolve: { alias },
         test: {
           name: 'storybook',
           browser: {
