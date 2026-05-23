@@ -26,15 +26,15 @@ Legend: `XS` ≈ <30 min · `S` ≈ <1h · `M` ≈ 1–2h · `L` ≈ half day
 
 ## 1. Domain model & shared types
 
-- [ ] **1.1 Define SSE event shape in `src/lib/run-progress/events.ts`** — `S`
+- [x] **1.1 Define SSE event shape in `src/lib/run-progress/events.ts`** — `S`
   - S: TypeScript discriminated union for `step_start`, `step_progress`, `step_complete`, `step_error`, `run_complete`. Include `runId`, `stepIndex`, `stepCount`, `label`, `progress?`, `ts`, plus an `error` payload variant.
   - AC: Types exported and re-used by both server (route handler) and client (component/hook).
 
-- [ ] **1.2 Define run/step state machine** — `S`
+- [x] **1.2 Define run/step state machine** — `S`
   - S: Types for `RunStatus = 'idle' | 'running' | 'complete' | 'error' | 'stalled'` and `StepState`.
   - AC: Pure helpers like `reduce(state, event)` with unit-test-friendly signatures.
 
-- [ ] **1.3 Centralise tuning constants** — `XS`
+- [x] **1.3 Centralise tuning constants** — `XS`
   - S: `STALL_TIMEOUT_MS = 10_000`, default step labels, gradient colours.
   - AC: One source of truth, no magic numbers in the component.
 
