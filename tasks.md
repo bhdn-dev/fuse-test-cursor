@@ -89,15 +89,15 @@ Legend: `XS` ≈ <30 min · `S` ≈ <1h · `M` ≈ 1–2h · `L` ≈ half day
 
 ## 4. Progress smoothing engine
 
-- [ ] **4.1 Decide & document smoothing model** — `S`
+- [x] **4.1 Decide & document smoothing model** — `S`
   - S: Document chosen approach in `README.md` (e.g. each step has a per-step expected duration; bar interpolates from `stepIndex / stepCount` toward `(stepIndex + 1) / stepCount` using `rAF`, easing toward target without overshoot; speed up to catch up when `step_complete` arrives early; never go backward).
   - AC: One-paragraph rationale in README.
 
-- [ ] **4.2 Implement `useSmoothProgress` (rAF-based)** — `M`
+- [x] **4.2 Implement `useSmoothProgress` (rAF-based)** — `M`
   - S: Pure hook taking `{ target: number; status: RunStatus }`, returns `progress: number` (0–1). Uses `requestAnimationFrame`. Respects `prefers-reduced-motion` (snap to target).
   - AC: Bar visibly glides between step completions; freezes on `complete`/`error`/`stalled`.
 
-- [ ] **4.3 Unit-test smoothing math** — `S`
+- [x] **4.3 Unit-test smoothing math** — `S`
   - S: Deterministic test by injecting a fake clock & rAF.
   - AC: Asserts monotonic non-decreasing progress, stays within `[0, target + epsilon]`.
 

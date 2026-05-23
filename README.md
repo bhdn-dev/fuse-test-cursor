@@ -83,4 +83,38 @@ public/fuse-icon.png                # left-icon asset
 
 ## Decisions log
 
-This section will accumulate as we land tasks (smoothing model in §4.1, stall UX in §6.5, timer + a11y trade-offs in §5/§7). For now: see `prd.md` and `tasks.md`.
+This section will accumulate as we land tasks (stall UX in §6.5, timer + a11y trade-offs in §5/§7). For now: see `prd.md` and `tasks.md`.
+
+### Progress smoothing model (§4.1)
+
+The parent derives a **target** in `[0, 1]` from the reduced run state:
+
+```
+target = (completedStepCount + currentStepInnerProgress) / stepCount
+```
+
+`useSmoothProgress` eases the **displayed** progress toward that target on every animation frame using simple exponential decay:
+
+```
+next = current + (target - current) * (1 - exp(-k * dt))
+```
+
+Why this shape:
+
+- **Naturally adaptive.** A large gap (e.g. a step finishes early and `target` jumps from `0.30` to `0.42`) produces a proportionally larger per-frame step, so the bar visibly *catches up* without a setInterval or scheduled "boost".
+- **No overshoot.** Each frame moves a fraction of the remaining distance, so `progress` asymptotes to `target` from below — we additionally clamp to `[current, target]` to be defensive against rounding.
+- **Monotonic.** We clamp `next >= current` even if `target` were to regress (it shouldn't, because the reducer never lowers per-step progress, but the smoothing layer enforces it independently so it composes safely with any future producer).
+- **Frame-rate independent.** `dt` is taken from the rAF callback's timestamp and capped at 100 ms so a backgrounded tab doesn't trigger a giant jump on resume.
+
+Terminal states:
+
+- `running` — animate as above.
+- `complete` — cancel the loop and snap to `target` (which the reducer pins at `1`), so the bar reliably reads 100% rather than 99.x%.
+- `error` / `stalled` — cancel the loop and **freeze** at whatever the bar is currently showing.
+- `idle` — sit at `0`.
+
+Reduced motion:
+
+- When `(prefers-reduced-motion: reduce)` matches, the hook snaps to `target` on every render and never starts an rAF loop. The media query is observed, so toggling the OS setting takes effect live without a remount.
+
+Default decay rate is `k = 6` per second (≈115 ms half-life), tuned to feel responsive without looking nervous. Consumers can override via the `decayRate` option — useful in tests, where a much higher rate makes assertions easy.
