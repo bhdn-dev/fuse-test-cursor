@@ -70,18 +70,18 @@ Legend: `XS` ≈ <30 min · `S` ≈ <1h · `M` ≈ 1–2h · `L` ≈ half day
 
 ## 3. Client data layer — `useRunProgress` hook
 
-- [ ] **3.1 Create `src/lib/run-progress/useRunProgress.ts`** — `M`
+- [x] **3.1 Create `src/lib/run-progress/useRunProgress.ts`** — `M`
   - S: Manages an `EventSource` (or `fetch` + `ReadableStream` reader) lifecycle: `start(mode)`, `stop()`, exposes `state`, `lastEventAt`, `events`.
   - AC: Unmount/abort closes the stream; React strict-mode double-effect safe.
 
-- [ ] **3.2 Apply reducer from §1.2** to derive `RunStatus` and per-step state — `S`
+- [x] **3.2 Apply reducer from §1.2** to derive `RunStatus` and per-step state — `S`
   - AC: Hook returns `{ status, steps, currentStepIndex, error, startedAt, endedAt }`.
 
-- [ ] **3.3 Stall detection** — `S`
+- [x] **3.3 Stall detection** — `S`
   - S: `requestAnimationFrame` loop (no `setInterval`) compares `now - lastEventAt` against `STALL_TIMEOUT_MS`. Transitions to `stalled`; recovers to `running` on next event.
   - AC: Unit test for stall transition with mocked time.
 
-- [ ] **3.4 Persist `startedAt` across re-renders** — `XS`
+- [x] **3.4 Persist `startedAt` across re-renders** — `XS`
   - S: `useRef` + lazy init on first event; only set on the client (`typeof window !== 'undefined'`).
   - AC: No SSR/CSR hydration mismatch warning in console.
 
