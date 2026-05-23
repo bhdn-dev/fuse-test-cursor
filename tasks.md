@@ -42,27 +42,27 @@ Legend: `XS` ≈ <30 min · `S` ≈ <1h · `M` ≈ 1–2h · `L` ≈ half day
 
 ## 2. Mock SSE endpoint (App Router route handler)
 
-- [ ] **2.1 Create route at `src/app/api/run/route.ts`** that returns a `text/event-stream` `Response` — `M`
+- [x] **2.1 Create route at `src/app/api/run/route.ts`** that returns a `text/event-stream` `Response` — `M`
   - S: Use `ReadableStream`; write `data: {json}\n\n` frames; handle client `abort` via `request.signal`.
   - AC: `curl -N http://localhost:3000/api/run?mode=happy` streams JSON events and terminates with `run_complete`.
 
-- [ ] **2.2 Implement Happy Path scenario** — `S`
+- [x] **2.2 Implement Happy Path scenario** — `S`
   - S: 6–10 steps with realistic uneven timings (mix of 500ms and ~8s), at least one step emitting `step_progress` mid-flight.
   - AC: Total run lasts long enough (~20–30s) to exercise smoothing and the timer.
 
-- [ ] **2.3 Implement Error scenario** — `S`
+- [x] **2.3 Implement Error scenario** — `S`
   - S: Reach step N, emit `step_error`, terminate stream (no `run_complete`).
   - AC: Client sees an explicit error event; component lands in `error` state.
 
-- [ ] **2.4 Implement Stall scenario** — `S`
+- [x] **2.4 Implement Stall scenario** — `S`
   - S: Emit a few events normally, then go silent (no events, keep stream open) for >10s.
   - AC: Client triggers `stalled` state after `STALL_TIMEOUT_MS`; resuming/aborting is clean.
 
-- [ ] **2.5 Mode selection via query param** — `XS`
+- [x] **2.5 Mode selection via query param** — `XS`
   - S: `?mode=happy|error|stall`; default `happy`; validate input.
   - AC: Invalid mode returns 400 with a clear message.
 
-- [ ] **2.6 Verify re-runnable without reload** — `XS`
+- [x] **2.6 Verify re-runnable without reload** — `XS`
   - S: Ensure each request gets a fresh `runId` and prior streams are properly closed when client aborts.
   - AC: Manual: trigger Happy → Error → Stall back-to-back without refreshing.
 
