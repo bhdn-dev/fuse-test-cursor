@@ -1,5 +1,10 @@
 import type { Preview } from '@storybook/nextjs-vite';
 
+// Pull Tailwind v4 (`@import 'tailwindcss'`) plus the design-token CSS
+// variables into every story preview. Without this, RunProgress.stories.tsx
+// would render unstyled because Storybook never touches `src/app/layout.tsx`.
+import '../src/app/globals.css';
+
 const preview: Preview = {
   parameters: {
     controls: {

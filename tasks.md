@@ -180,14 +180,14 @@ Legend: `XS` ≈ <30 min · `S` ≈ <1h · `M` ≈ 1–2h · `L` ≈ half day
 
 ## 9. Storybook stories
 
-- [ ] **9.1 Set up story file `RunProgress.stories.tsx`** — `XS`
+- [x] **9.1 Set up story file `RunProgress.stories.tsx`** — `XS`
   - AC: Story renders without errors in `npm run storybook`.
 
-- [ ] **9.2 Story per state** — `S`
+- [x] **9.2 Story per state** — `S`
   - S: `Idle`, `Running` (mid-progress with a few completed steps), `Complete`, `Error`, `Stalled`. Use controls for `progress` and `elapsedMs`.
   - AC: Five distinct stories visible in sidebar; each visually correct.
 
-- [ ] **9.3 `Live` story driven by the mock SSE endpoint** — `S` (optional but valuable)
+- [x] **9.3 `Live` story driven by the mock SSE endpoint** — `S` (optional but valuable)
   - AC: Story imports the hook and the component, with mode-selection controls.
 
 ---
