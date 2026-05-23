@@ -121,27 +121,27 @@ Legend: `XS` ≈ <30 min · `S` ≈ <1h · `M` ≈ 1–2h · `L` ≈ half day
 
 ## 6. `RunProgress` component (presentation)
 
-- [ ] **6.1 Component skeleton at `src/components/RunProgress/RunProgress.tsx`** — `S`
+- [x] **6.1 Component skeleton at `src/components/RunProgress/RunProgress.tsx`** — `S`
   - S: Props: `{ status, steps, currentStepIndex, progress, elapsedMs, error?, onRetry?, className? }`. Pure/presentational; no data fetching inside.
   - AC: Renders in all 5 states given mock props.
 
-- [ ] **6.2 Horizontal progress bar with gradient fill** — `S`
+- [x] **6.2 Horizontal progress bar with gradient fill** — `S`
   - S: Tailwind utilities + a thin transform-based fill (`transform: scaleX(progress)`), `transform-origin: left`. No layout thrash.
   - AC: `role="progressbar"`, `aria-valuenow` (rounded), `aria-valuemin=0`, `aria-valuemax=100`, `aria-valuetext` includes step label.
 
-- [ ] **6.3 Left icon with active/static animation** — `S`
+- [x] **6.3 Left icon with active/static animation** — `S`
   - S: Uses `fuse-icon.png`. Shimmer/fade while `running`; static on `complete`; tinted/red on `error`; subtle indicator on `stalled`. Respect `prefers-reduced-motion`.
   - AC: Animation pauses correctly on terminal states.
 
-- [ ] **6.4 Cycling step list above the bar** — `M`
+- [x] **6.4 Cycling step list above the bar** — `M`
   - S: Show a small stack of the last N step labels; cross-fade or slide as `currentStepIndex` advances. Latest active label is most prominent.
   - AC: Smooth transitions; no layout shift; truncation on overflow.
 
-- [ ] **6.5 Stalled visual treatment** — `S`
+- [x] **6.5 Stalled visual treatment** — `S`
   - S: e.g. desaturated bar + small "Waiting for server…" badge near the active step. Document the choice in README.
   - AC: Clearly distinguishable from `running` and `error`.
 
-- [ ] **6.6 Error visual treatment** — `S`
+- [x] **6.6 Error visual treatment** — `S`
   - S: Bar turns red at error point, error message rendered, optional `Retry` button (wired by consumer).
   - AC: Screen-reader announces the error (see §7).
 

@@ -137,3 +137,13 @@ A few decisions worth calling out:
 - **Monotonic.** A wall-clock regression (NTP correction, manual time change) can never make the timer go backward.
 - **`startedAt` is set lazily client-side** by the reducer on the first event (§3.4), so the initial SSR render is always `0` and there's no hydration mismatch.
 - **A11y.** The timer is rendered as normal text _outside_ any `aria-live` region (see §7.2). Screen readers can navigate to it on demand, but the per-frame digit changes never trigger a polite announcement.
+
+### Stalled visual treatment (§6.5)
+
+Three cues stack to make `stalled` unambiguous against the neighbouring states (and they're each independently sufficient — so colourblind users, reduced-motion users, and screen-reader users all get the signal):
+
+1. **Bar fill desaturates and gently pulses.** Switching from the indigo→violet→pink gradient to flat `#71717A` zinc-500 says "this is not a normal in-progress state"; layering `motion-safe:animate-pulse` on top says "still alive, just waiting" — which is what distinguishes it from `error` (frozen solid red) and `complete` (snapped to 100% gradient).
+2. **Inline `Waiting for server…` pill next to the active step.** Anchored next to the current step row (not the card footer) so the affordance is read alongside the label of the step we're stuck on. The leading dot pulses under `motion-safe:` and the badge itself is statically recognisable when motion is off.
+3. **Neutral ring around the icon** (vs. red on `error`) so the leftmost glance at the card already discriminates `stalled` from `error` without colour-only signalling.
+
+The timer **freezes** on stall (see §5 above) — the stall pill carries the "we've been waiting" signal so the timer doesn't have to lie about run duration.
