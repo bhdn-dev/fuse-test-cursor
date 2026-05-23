@@ -1,36 +1,86 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Smooth Progress Bar with Live `MM:SS.ms` Timer
 
-## Getting Started
+Standalone Next.js 16 + TypeScript + Tailwind reference implementation of a `RunProgress` component fed by a mock SSE endpoint. See `prd.md` for the full brief and `tasks.md` for the implementation plan.
 
-First, run the development server:
+## Getting started
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev          # http://localhost:3000
+npm run storybook    # http://localhost:6006
+npm test             # unit tests (vitest)
+npm run test:storybook
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Next.js 16 conventions (deltas from older training data)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+These are the non-obvious points that matter for this project — captured up front so we don't write code against an older mental model. Sourced from `node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/route.md` and `node_modules/next/dist/docs/01-app/02-guides/streaming.md` in the locally installed Next.js.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Route handlers (`app/api/<path>/route.ts`)
 
-## Learn More
+- **Signature is `(request: Request | NextRequest, context?)`.** No `NextApiRequest`/`NextApiResponse` (that's Pages Router).
+- **Dynamic params are a `Promise`** as of v15: `{ params }: { params: Promise<{ slug: string }> }`. Our `/api/run` has no dynamic segment, so this doesn't bite us — but worth knowing.
+- **`GET` handlers default to dynamic** (changed in v15 from static). For our SSE endpoint we still set `export const dynamic = 'force-dynamic'` defensively, since any caching at all would defeat streaming.
+- **`runtime`** can be `'nodejs'` (default) or `'edge'`. We'll stick with `'nodejs'` — no runtime constraints needed.
+- **`RouteContext<'/path'>`** is a globally available helper (no import) for typing params from a route literal. Not needed here.
 
-To learn more about Next.js, take a look at the following resources:
+### Streaming via Web Streams API
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The streaming guide explicitly calls out **Server-Sent Events** as the canonical use case for raw streaming in route handlers. The recommended shape:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```ts
+export async function GET(request: Request) {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+      // ...
+      controller.close();
+    },
+    cancel() {
+      // client aborted
+    },
+  });
 
-## Deploy on Vercel
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no', // disable nginx buffering for proxies
+      'X-Content-Type-Options': 'nosniff',
+    },
+  });
+}
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- **Listen to `request.signal`** to detect client aborts; clear timers and call `controller.close()` from the `abort` handler (or use `cancel()` on the stream).
+- **`X-Accel-Buffering: no`** is needed if anything downstream (nginx, some CDNs) might buffer; the streaming guide flags this explicitly.
+- **`Accept-Encoding: identity`** on the client side disables compression buffering when verifying with a script; not something we need to send from the browser, but useful for `curl -N` style debugging.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Suspense / streaming UI (not used here, but worth being aware of)
+
+- `<Suspense>` boundaries each form an independent streaming + hydration unit.
+- `loading.tsx` works the same as before, but for granular streaming prefer explicit `<Suspense>`.
+- Once streaming begins, the response **status code is locked**. `notFound()` mid-stream injects a meta noindex; `redirect()` becomes a client-side redirect. Doesn't affect our route handler (we control headers up front), but relevant when wiring this into a real app.
+
+## File map (target — sections grow as we land tasks)
+
+```
+src/app/page.tsx                    # demo page (trigger buttons + RunProgress)
+src/app/api/run/route.ts            # mock SSE endpoint
+src/lib/run-progress/events.ts      # SSE event discriminated union
+src/lib/run-progress/state.ts       # RunStatus / StepState / reduce()
+src/lib/run-progress/constants.ts   # STALL_TIMEOUT_MS, default labels, etc.
+src/lib/run-progress/useRunProgress.ts
+src/lib/run-progress/useSmoothProgress.ts
+src/lib/run-progress/useElapsed.ts
+src/lib/run-progress/format.ts      # formatMMSSms
+src/components/RunProgress/RunProgress.tsx
+src/components/RunProgress/RunProgress.stories.tsx
+public/fuse-icon.png                # left-icon asset
+```
+
+## Decisions log
+
+This section will accumulate as we land tasks (smoothing model in §4.1, stall UX in §6.5, timer + a11y trade-offs in §5/§7). For now: see `prd.md` and `tasks.md`.
