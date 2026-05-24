@@ -194,17 +194,17 @@ Legend: `XS` ≈ <30 min · `S` ≈ <1h · `M` ≈ 1–2h · `L` ≈ half day
 
 ## 10. Tests
 
-- [ ] **10.1 Unit: `formatMMSSms`** — `XS` (see §5.2)
-- [ ] **10.2 Unit: event reducer (`reduce(state, event)`)** — `S`
+- [x] **10.1 Unit: `formatMMSSms`** — `XS` (see §5.2)
+- [x] **10.2 Unit: event reducer (`reduce(state, event)`)** — `S`
   - AC: Covers all event types + ordering edge cases (out-of-order, duplicate, error after complete).
-- [ ] **10.3 Unit: `useSmoothProgress` math** — `S` (see §4.3)
-- [ ] **10.4 Unit: stall detection in `useRunProgress`** — `S`
+- [x] **10.3 Unit: `useSmoothProgress` math** — `S` (see §4.3)
+- [x] **10.4 Unit: stall detection in `useRunProgress`** — `S`
   - S: Fake timers / rAF; assert transition to `stalled` after 10s of silence and recovery on next event.
-- [ ] **10.5 Component: `RunProgress` renders each state correctly** — `S`
+- [x] **10.5 Component: `RunProgress` renders each state correctly** — `S`
   - S: React Testing Library snapshots / role queries; assert ARIA attributes.
-- [ ] **10.6 Component: `aria-live` does not update on every tick** — `S`
+- [x] **10.6 Component: `aria-live` does not update on every tick** — `S`
   - S: Spy on the live-region content across many rAF frames; assert it only changes on step boundary.
-- [ ] **10.7 Storybook test runner (`test:storybook`) green** — `XS`
+- [x] **10.7 Storybook test runner (`test:storybook`) green** — `XS`
 
 ---
 
