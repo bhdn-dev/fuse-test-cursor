@@ -32,16 +32,20 @@ const EPSILON = 0.0005;
 /** Cap the per-frame `dt` so a backgrounded tab doesn't snap on resume. */
 const MAX_DT_SECONDS = 0.1;
 
+/** Inputs for the rAF exponential easing loop. */
 export interface UseSmoothProgressOptions {
-  /** Desired progress in `[0, 1]`. Values outside the range are clamped. */
+  /** Desired progress in `[0, 1]`. Clamped if out of range. */
   target: number;
-  /** Drives the animation lifecycle — see module docstring. */
+  /** Controls animate / snap / freeze behaviour. */
   status: RunStatus;
-  /** Override the exponential decay rate (per second). Mostly for tests. */
+  /** Per-second decay rate; defaults to `6`. Override in tests. */
   decayRate?: number;
 }
 
-/** Returns the eased displayed progress, monotonically non-decreasing in `[0, 1]`. */
+/**
+ * Eases `progress` toward `target` on each animation frame while `status` is
+ * `running`. Monotonic, frame-rate independent, honours `prefers-reduced-motion`.
+ */
 export function useSmoothProgress({
   target,
   status,

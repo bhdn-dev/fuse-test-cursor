@@ -210,7 +210,7 @@ Legend: `XS` ≈ <30 min · `S` ≈ <1h · `M` ≈ 1–2h · `L` ≈ half day
 
 ## 11. README & handoff docs
 
-- [ ] **11.1 Replace template `README.md`** — `M`
+- [x] **11.1 Replace template `README.md`** — `M`
   - Sections required:
     - Setup / scripts (`dev`, `storybook`, `test`, `test:storybook`)
     - SSE event shape (with concrete JSON examples)
@@ -221,7 +221,7 @@ Legend: `XS` ≈ <30 min · `S` ≈ <1h · `M` ≈ 1–2h · `L` ≈ half day
     - "How to drop this into the real codebase" — list of dependencies & assumptions to revisit.
   - AC: A new engineer could integrate this into the main app from the README alone.
 
-- [ ] **11.2 Add inline JSDoc on public APIs only** — `XS`
+- [x] **11.2 Add inline JSDoc on public APIs only** — `XS`
   - S: Hook signatures + component props. Avoid narration comments.
 
 ---

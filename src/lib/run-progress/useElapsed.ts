@@ -33,15 +33,19 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { RunStatus } from './state';
 
+/** Wall-clock inputs for the live elapsed-time readout. */
 export interface UseElapsedOptions {
-  /** First-event wall-clock time (ms). `null` while the run is `idle`. */
+  /** First-event timestamp (ms). `null` while idle. */
   startedAt: number | null;
-  /** Terminal-event wall-clock time (ms). `null` until `complete` / `error`. */
+  /** Terminal-event timestamp (ms). `null` until complete/error. */
   endedAt: number | null;
-  /** Run-level status. Drives whether we tick, freeze, or snap. */
   status: RunStatus;
 }
 
+/**
+ * Returns elapsed ms since `startedAt`, repainted on rAF while running.
+ * Freezes on `stalled`; snaps to `endedAt - startedAt` on terminal status.
+ */
 export function useElapsed({ startedAt, endedAt, status }: UseElapsedOptions): number {
   const [elapsed, setElapsed] = useState(0);
   // Mirrors `elapsed` so the effect can read the latest value without

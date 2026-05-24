@@ -14,11 +14,13 @@
 
 import { formatMMSSms } from '@/lib/run-progress/format';
 
+/** Props for the MM:SS.cc elapsed-time readout. */
 export interface TimerProps {
   elapsedMs: number;
   className?: string;
 }
 
+/** Renders `formatMMSSms(elapsedMs)` outside any `aria-live` region. */
 export function Timer({ elapsedMs, className }: TimerProps) {
   const classes = ['font-mono', 'tabular-nums', 'text-sm', 'text-zinc-500', 'dark:text-zinc-400'];
   if (className) classes.push(className);

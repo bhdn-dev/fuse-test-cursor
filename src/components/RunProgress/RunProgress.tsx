@@ -22,22 +22,22 @@ import {
 } from '@/lib/run-progress/constants';
 import type { RunError, RunStatus, StepState } from '@/lib/run-progress/state';
 
+/**
+ * Presentational props for the run-progress card. Data fetching and rAF hooks
+ * live in the consumer — pass their outputs in here.
+ */
 export interface RunProgressProps {
   status: RunStatus;
   steps: readonly StepState[];
-  /** Index of the step currently `running` (or last touched). `-1` while idle. */
   currentStepIndex: number;
-  /** Smoothed progress in `[0, 1]`, fed in from `useSmoothProgress`. */
   progress: number;
-  /** Elapsed ms since the first event, fed in from `useElapsed`. */
   elapsedMs: number;
-  /** Populated on `error` status. */
   error?: RunError | null;
-  /** Optional retry handler. When provided and `status === 'error'`, a Retry button is rendered. */
   onRetry?: () => void;
   className?: string;
 }
 
+/** Multi-step run card: icon, step list, smoothed bar, timer, error/stall badges. */
 export function RunProgress({
   status,
   steps,

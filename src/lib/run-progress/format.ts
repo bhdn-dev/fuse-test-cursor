@@ -15,6 +15,7 @@
  *   value never reads ahead of `elapsedMs` (matches the rAF timer's monotonic
  *   guarantee in `useElapsed`).
  */
+/** Formats `ms` as `MM:SS.cc` (centiseconds, truncated). */
 export function formatMMSSms(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) ms = 0;
 

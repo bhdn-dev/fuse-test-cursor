@@ -1,100 +1,172 @@
 # Smooth Progress Bar with Live `MM:SS.ms` Timer
 
-Standalone Next.js 16 + TypeScript + Tailwind reference implementation of a `RunProgress` component fed by a mock SSE endpoint. See `prd.md` for the full brief and `tasks.md` for the implementation plan.
+Standalone Next.js 16 + TypeScript + Tailwind reference implementation of a `RunProgress` component fed by a mock SSE endpoint. See [`prd.md`](./prd.md) for the full brief and [`tasks.md`](./tasks.md) for the implementation plan.
 
-## Getting started
+---
+
+## Setup & scripts
 
 ```bash
 npm install
-npm run dev          # http://localhost:3000
-npm run storybook    # http://localhost:6006
-npm test             # unit tests (vitest)
-npm run test:storybook
+
+npm run dev              # demo page → http://localhost:3000
+npm run storybook        # component stories → http://localhost:6006
+npm run build            # production build
+npm run lint             # eslint
+npm run format:check     # prettier (CI-friendly)
+npm test                 # unit tests (vitest, jsdom)
+npm run test:storybook   # Storybook interaction/a11y tests (Playwright)
 ```
 
-## Next.js 16 conventions (deltas from older training data)
+**Quick smoke test:** open the demo page, click **Happy Path**, watch the bar glide and the timer tick for ~20 s. Then try **Error** and **Stall** without refreshing — each run gets a fresh `runId` and the prior stream is aborted cleanly.
 
-These are the non-obvious points that matter for this project — captured up front so we don't write code against an older mental model. Sourced from `node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/route.md` and `node_modules/next/dist/docs/01-app/02-guides/streaming.md` in the locally installed Next.js.
+**Debug the SSE endpoint directly:**
 
-### Route handlers (`app/api/<path>/route.ts`)
+```bash
+curl -N 'http://localhost:3000/api/run?mode=happy'
+```
 
-- **Signature is `(request: Request | NextRequest, context?)`.** No `NextApiRequest`/`NextApiResponse` (that's Pages Router).
-- **Dynamic params are a `Promise`** as of v15: `{ params }: { params: Promise<{ slug: string }> }`. Our `/api/run` has no dynamic segment, so this doesn't bite us — but worth knowing.
-- **`GET` handlers default to dynamic** (changed in v15 from static). For our SSE endpoint we still set `export const dynamic = 'force-dynamic'` defensively, since any caching at all would defeat streaming.
-- **`runtime`** can be `'nodejs'` (default) or `'edge'`. We'll stick with `'nodejs'` — no runtime constraints needed.
-- **`RouteContext<'/path'>`** is a globally available helper (no import) for typing params from a route literal. Not needed here.
+Each line is a standard SSE `data:` frame containing one JSON object (see [SSE event shape](#sse-event-shape) below).
 
-### Streaming via Web Streams API
+---
 
-The streaming guide explicitly calls out **Server-Sent Events** as the canonical use case for raw streaming in route handlers. The recommended shape:
+## File map
 
-```ts
-export async function GET(request: Request) {
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream({
-    async start(controller) {
-      controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
-      // ...
-      controller.close();
-    },
-    cancel() {
-      // client aborted
-    },
-  });
+```
+src/app/page.tsx                         # demo page shell (server component)
+src/components/RunProgress/
+  RunProgress.tsx                        # presentational card (bar, steps, icon, timer)
+  RunProgressDemo.tsx                    # wires hooks → component for the demo page
+  RunProgress.stories.tsx                # Storybook stories (one per state + Live)
+  Timer.tsx                              # MM:SS.cc readout
+src/lib/run-progress/
+  events.ts                              # SSE event discriminated union + runtime guard
+  state.ts                               # RunStatus / StepState / reduce()
+  constants.ts                           # STALL_TIMEOUT_MS, labels, gradient colours
+  useRunProgress.ts                      # fetch + SSE reader, stall detection, controls
+  useSmoothProgress.ts                   # rAF exponential easing toward target
+  useElapsed.ts                          # rAF wall-clock timer
+  format.ts                              # formatMMSSms()
+  index.ts                               # barrel for server-safe pure exports
+src/app/api/run/
+  route.ts                               # GET /api/run — text/event-stream transport
+  scenarios.ts                           # happy / error / stall mock scripts
+public/fuse-icon.png                     # left-icon asset
+```
 
-  return new Response(stream, {
-    headers: {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no', // disable nginx buffering for proxies
-      'X-Content-Type-Options': 'nosniff',
-    },
-  });
+**Integration entry points:** copy `src/components/RunProgress/` and `src/lib/run-progress/` into your app, then wire them the same way `RunProgressDemo.tsx` does — or swap `useRunProgress`'s fetch URL for your real backend.
+
+---
+
+## SSE event shape
+
+Transport: **`GET /api/run?mode=happy|error|stall`** returns `Content-Type: text/event-stream`. Each event is one SSE frame:
+
+```
+data: {"type":"step_start","runId":"…","stepIndex":0,"stepCount":7,"label":"Analyzing campaigns…","ts":1716566400123}
+
+```
+
+The `data:` payload is a JSON object matching the discriminated union in `src/lib/run-progress/events.ts`. All events share `runId` (stable for the stream) and `ts` (server emit time, ms since epoch). Step-scoped events also carry `stepIndex`, `stepCount`, and `label`.
+
+### Event types
+
+| `type` | When emitted | Extra fields |
+|---|---|---|
+| `step_start` | A step begins | — |
+| `step_progress` | Mid-step checkpoint (optional) | `progress` in `[0, 1]` |
+| `step_complete` | A step finishes | — |
+| `step_error` | A step fails (terminal) | `error: { message, code? }` |
+| `run_complete` | Entire run succeeds (terminal) | `stepCount` |
+
+### Concrete examples
+
+**Step start** — first frame of a run:
+
+```json
+{
+  "type": "step_start",
+  "runId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "stepIndex": 0,
+  "stepCount": 7,
+  "label": "Analyzing campaigns…",
+  "ts": 1716566400123
 }
 ```
 
-- **Listen to `request.signal`** to detect client aborts; clear timers and call `controller.close()` from the `abort` handler (or use `cancel()` on the stream).
-- **`X-Accel-Buffering: no`** is needed if anything downstream (nginx, some CDNs) might buffer; the streaming guide flags this explicitly.
-- **`Accept-Encoding: identity`** on the client side disables compression buffering when verifying with a script; not something we need to send from the browser, but useful for `curl -N` style debugging.
+**Mid-step progress** — emitted during long steps so the bar can glide inside a single step slot:
 
-### Suspense / streaming UI (not used here, but worth being aware of)
-
-- `<Suspense>` boundaries each form an independent streaming + hydration unit.
-- `loading.tsx` works the same as before, but for granular streaming prefer explicit `<Suspense>`.
-- Once streaming begins, the response **status code is locked**. `notFound()` mid-stream injects a meta noindex; `redirect()` becomes a client-side redirect. Doesn't affect our route handler (we control headers up front), but relevant when wiring this into a real app.
-
-## File map (target — sections grow as we land tasks)
-
-```
-src/app/page.tsx                    # demo page (trigger buttons + RunProgress)
-src/app/api/run/route.ts            # mock SSE endpoint
-src/lib/run-progress/events.ts      # SSE event discriminated union
-src/lib/run-progress/state.ts       # RunStatus / StepState / reduce()
-src/lib/run-progress/constants.ts   # STALL_TIMEOUT_MS, default labels, etc.
-src/lib/run-progress/useRunProgress.ts
-src/lib/run-progress/useSmoothProgress.ts
-src/lib/run-progress/useElapsed.ts
-src/lib/run-progress/format.ts      # formatMMSSms
-src/components/RunProgress/Timer.tsx
-src/components/RunProgress/RunProgress.tsx
-src/components/RunProgress/RunProgress.stories.tsx
-public/fuse-icon.png                # left-icon asset
+```json
+{
+  "type": "step_progress",
+  "runId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "stepIndex": 1,
+  "stepCount": 7,
+  "label": "Reading metrics…",
+  "progress": 0.5,
+  "ts": 1716566404123
+}
 ```
 
-## Decisions log
+**Step complete:**
 
-This section will accumulate as we land tasks (stall UX in §6.5, timer + a11y trade-offs in §5/§7). For now: see `prd.md` and `tasks.md`.
+```json
+{
+  "type": "step_complete",
+  "runId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "stepIndex": 1,
+  "stepCount": 7,
+  "label": "Reading metrics…",
+  "ts": 1716566412123
+}
+```
 
-### Progress smoothing model (§4.1)
+**Step error** (Error mode) — stream ends here; no `run_complete`:
+
+```json
+{
+  "type": "step_error",
+  "runId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "stepIndex": 2,
+  "stepCount": 7,
+  "label": "Contacting API…",
+  "error": {
+    "message": "Upstream API returned 503",
+    "code": "UPSTREAM_UNAVAILABLE"
+  },
+  "ts": 1716566415123
+}
+```
+
+**Run complete** (Happy mode) — final frame:
+
+```json
+{
+  "type": "run_complete",
+  "runId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "stepCount": 7,
+  "ts": 1716566420123
+}
+```
+
+### Client handling notes
+
+- **`useRunProgress`** uses `fetch` + a `ReadableStream` reader (not `EventSource`) so it can abort cleanly, skip auto-reconnect, and send custom headers.
+- **`isRunEvent()`** validates every parsed frame before it reaches the reducer.
+- **Stale frames** from a prior run are dropped when `event.runId !== state.runId`.
+- **Terminal events:** `step_error` and `run_complete` both pin `endedAt` and stop further reduction.
+
+---
+
+## Progress smoothing
 
 The parent derives a **target** in `[0, 1]` from the reduced run state:
 
 ```
-target = (completedStepCount + currentStepInnerProgress) / stepCount
+target = sum(step.progress for each step) / stepCount
 ```
 
-`useSmoothProgress` eases the **displayed** progress toward that target on every animation frame using simple exponential decay:
+`useSmoothProgress` eases the **displayed** progress toward that target on every animation frame using exponential decay:
 
 ```
 next = current + (target - current) * (1 - exp(-k * dt))
@@ -120,7 +192,23 @@ Reduced motion:
 
 Default decay rate is `k = 6` per second (≈115 ms half-life), tuned to feel responsive without looking nervous. Consumers can override via the `decayRate` option — useful in tests, where a much higher rate makes assertions easy.
 
-### Live `MM:SS.ms` timer (§5)
+---
+
+## Stall detection
+
+**Threshold:** `STALL_TIMEOUT_MS = 10_000` (10 seconds of silence) — defined in `src/lib/run-progress/constants.ts` and shared by the hook and the Stall demo scenario.
+
+**Mechanism:** while `status === 'running'`, `useRunProgress` runs a `requestAnimationFrame` loop (no `setInterval`) that compares `Date.now() - lastEventAt` against the threshold. When exceeded, the reducer transitions to `stalled`. The loop stops in `stalled`; the next inbound event recovers to `running` and restarts the loop.
+
+**Why 10 s:** matches the PRD requirement and is long enough that normal uneven step timings (500 ms – 8 s) never false-positive, but short enough that a hung backend is surfaced before the user assumes the run is still healthy.
+
+**Why rAF, not `setInterval`:** consistent with the PRD's animation constraint; the stall check piggybacks on the same scheduling model as the bar and timer, and naturally pauses when the tab is backgrounded.
+
+**UX pairing:** the timer **freezes** on stall (see [Live timer](#live-mmssms-timer) below) so it doesn't imply the _run_ is still advancing. The "Waiting for server…" badge and desaturated pulsing bar carry the wait signal instead.
+
+---
+
+## Live `MM:SS.ms` timer
 
 The timer is a thin three-piece split:
 
@@ -128,40 +216,156 @@ The timer is a thin three-piece split:
 - **`formatMMSSms(ms)`** — pure formatter, always `MM:SS.cc` (see note below on the `.ms` label).
 - **`<Timer elapsedMs />`** — pure presentational component using `font-mono tabular-nums` so the digits don't reflow as values change. Positioned by the parent via `className` (bottom-right of the card per PRD §2).
 
-A few decisions worth calling out:
+Key decisions:
 
-- **The fractional field is hundredths of a second, not milliseconds.** The PRD calls this "MM:SS.ms" and shows examples like `01:23.45` — two digits, so it's centiseconds. We truncate (not round) the cs field so the displayed value never reads ahead of `elapsedMs`, matching the rAF hook's monotonic guarantee.
-- **Stalled freezes the timer.** When the run goes `stalled` we _stop incrementing_ the elapsed value rather than continue counting. Surfacing "we've been waiting on the server for 7s" via the timer would mislead the user into thinking the _run_ is taking that long; the stall badge (§6.5) carries that signal instead. Recovery to `running` snaps the timer to the real wall-clock elapsed on the next frame.
-- **Terminal snaps to `endedAt - startedAt`.** Both `complete` and `error` pin the displayed value to the server-side end timestamp (recorded by the reducer on the terminating event) rather than whatever the last rAF frame happened to write. That keeps the final readout stable across viewers and reliably reads `00:30.00` instead of `00:30.07`.
-- **No work when the tab is hidden.** rAF already throttles in background tabs, but the hook also listens to `visibilitychange` and explicitly cancels the loop on hidden / restarts on visible — and snaps to the wall clock on resume rather than accumulating frame-by-frame drift. (No `setInterval` anywhere, per PRD.)
-- **Monotonic.** A wall-clock regression (NTP correction, manual time change) can never make the timer go backward.
+- **The fractional field is hundredths of a second, not milliseconds.** The PRD calls this "MM:SS.ms" and shows examples like `01:23.45` — two digits, so it's centiseconds. We truncate (not round) the cs field so the displayed value never reads ahead of `elapsedMs`.
+- **Stalled freezes the timer.** Recovery to `running` snaps to real wall-clock elapsed on the next frame.
+- **Terminal snaps to `endedAt - startedAt`.** Both `complete` and `error` pin the displayed value to the server-side end timestamp recorded by the reducer.
+- **No work when the tab is hidden.** The hook listens to `visibilitychange` and cancels the rAF loop on hidden / restarts on visible.
 - **`startedAt` is set lazily client-side** by the reducer on the first event (§3.4), so the initial SSR render is always `0` and there's no hydration mismatch.
-- **A11y.** The timer is rendered as normal text _outside_ any `aria-live` region (see §7.2). Screen readers can navigate to it on demand, but the per-frame digit changes never trigger a polite announcement.
 
-### Stalled visual treatment (§6.5)
+---
 
-Three cues stack to make `stalled` unambiguous against the neighbouring states (and they're each independently sufficient — so colourblind users, reduced-motion users, and screen-reader users all get the signal):
+## Stalled visual treatment
 
-1. **Bar fill desaturates and gently pulses.** Switching from the indigo→violet→pink gradient to flat `#71717A` zinc-500 says "this is not a normal in-progress state"; layering `motion-safe:animate-pulse` on top says "still alive, just waiting" — which is what distinguishes it from `error` (frozen solid red) and `complete` (snapped to 100% gradient).
-2. **Inline `Waiting for server…` pill next to the active step.** Anchored next to the current step row (not the card footer) so the affordance is read alongside the label of the step we're stuck on. The leading dot pulses under `motion-safe:` and the badge itself is statically recognisable when motion is off.
-3. **Neutral ring around the icon** (vs. red on `error`) so the leftmost glance at the card already discriminates `stalled` from `error` without colour-only signalling.
+Three cues stack to make `stalled` unambiguous:
 
-The timer **freezes** on stall (see §5 above) — the stall pill carries the "we've been waiting" signal so the timer doesn't have to lie about run duration.
+1. **Bar fill desaturates and gently pulses** — flat zinc-500 instead of the indigo→violet→pink gradient; `motion-safe:animate-pulse` says "still alive, just waiting".
+2. **Inline `Waiting for server…` pill** next to the active step row.
+3. **Neutral ring around the icon** (vs. red on `error`).
 
-### Accessibility (§7)
+---
+
+## Accessibility
 
 Three layers, each responsible for one signal:
 
-1. **`role="progressbar"`** on the bar exposes `aria-valuemin=0`, `aria-valuemax=100`, and a `aria-valuenow` rounded from the smoothed value. The displayed percentage is what changes every animation frame — and that's _fine_, because `aria-valuenow` is a number-valued attribute and AT typically polls it rather than re-announcing on every tick. We additionally set **`aria-valuetext`** with a human-readable label (e.g. _"Step 2 of 7: Reading metrics…"_); this string is a pure function of `(status, currentStepIndex, label, stepCount)`, so it only changes at step boundaries and never on a rAF tick. Verified by a unit test that rerenders with varying `progress` and asserts `aria-valuetext` stays identical.
-2. **`aria-live="polite"` region** (a visually hidden `sr-only` `<span>` with `aria-atomic="true"`) carries the canonical step-transition announcement. Its content is derived from the same `(status, step, stepCount)` tuple — never from `progress`, never from `elapsedMs` — and React's DOM diffing only writes the node when the string changes, so a `MutationObserver` over 20 frames of `progress`/`elapsedMs` churn records **zero** mutations (also covered by a unit test). The region stays empty in the `error` state because the inline `ErrorPanel` already has `role="alert"`; we'd rather have one assertive announcement than fight a polite one against an assertive one.
-3. **`prefers-reduced-motion`** is honoured in two complementary ways:
-   - **CSS-level** — every animated class in the component (`animate-pulse` on the icon, the stalled bar fill, and the stalled badge dot; `transition-*` / `duration-*` / `ease-*` on the step-list rows) is gated behind Tailwind's **`motion-safe:`** variant, which compiles to `@media (prefers-reduced-motion: no-preference)`. Toggling the OS setting collapses the rules without a remount.
-   - **JS-level** — `useSmoothProgress` subscribes to `window.matchMedia('(prefers-reduced-motion: reduce)')` and, while reduced motion is on, **snaps** the displayed value to the target on every render and never schedules an rAF frame. The `change` listener means flipping the OS toggle takes effect live.
+1. **`role="progressbar"`** on the bar exposes `aria-valuemin=0`, `aria-valuemax=100`, and `aria-valuenow` rounded from the smoothed value. **`aria-valuetext`** (e.g. _"Step 2 of 7: Reading metrics…"_) is derived from `(status, currentStepIndex, label, stepCount)` and only changes at step boundaries — never on a rAF tick.
+2. **`aria-live="polite"` region** — a visually hidden `sr-only` `<span>` with `aria-atomic="true"` announces step transitions and status changes. Content never includes `progress` or `elapsedMs`. Stays empty in `error` because the inline `ErrorPanel` already has `role="alert"`.
+3. **Timer vs live region split.** The timer is normal text _outside_ any `aria-live` region. Screen readers can navigate to it on demand, but per-frame digit changes never trigger polite announcements. This is the core a11y trade-off: live elapsed time for sighted users, quiet step announcements for AT users.
+4. **`prefers-reduced-motion`** — CSS `motion-safe:` gates on icon pulse, step-list transitions, and stall badge dot; `useSmoothProgress` snaps to target in JS when reduced motion is on.
 
-The timer continues to update every frame even with reduced motion — that's a digit readout, not motion — but it lives outside any `aria-live` region (see §5), so a screen reader treats it as static text that the user can navigate to on demand instead of an announcement stream.
+---
 
-What this buys us:
+## How to drop this into the real codebase
 
-- **Colour-independent state.** Each status has a non-colour cue (motion, badge, ring, alert), so colourblind users get full information.
-- **Motion-independent state.** With reduced motion on, the bar still moves (it just snaps each step), the icon still gets a ring on error / stall, the stall badge still renders (just static), and the live region still announces.
-- **Quiet by default.** The timer never announces; the bar's text only changes on step boundaries; the polite region only fires on step / status transitions; the error region fires once on error. No per-frame chatter.
+### 1. Copy the modules
+
+| Copy | Purpose |
+|---|---|
+| `src/components/RunProgress/` | UI card + timer + Storybook stories |
+| `src/lib/run-progress/` | types, reducer, hooks, formatter |
+| `public/fuse-icon.png` | left icon (swap for your brand asset) |
+
+You do **not** need `src/app/api/run/` in production — replace it with your real streaming endpoint.
+
+### 2. Wire the consumer
+
+Follow `RunProgressDemo.tsx`:
+
+```tsx
+const { status, steps, currentStepIndex, error, startedAt, endedAt, start, reset } =
+  useRunProgress();
+
+const target = useMemo(() => {
+  if (steps.length === 0) return 0;
+  return steps.reduce((sum, s) => sum + s.progress, 0) / steps.length;
+}, [steps]);
+
+const progress = useSmoothProgress({ target, status });
+const elapsedMs = useElapsed({ startedAt, endedAt, status });
+
+return (
+  <RunProgress
+    status={status}
+    steps={steps}
+    currentStepIndex={currentStepIndex}
+    progress={progress}
+    elapsedMs={elapsedMs}
+    error={error}
+    onRetry={() => start(lastMode)}
+  />
+);
+```
+
+### 3. Point `useRunProgress` at your backend
+
+In `useRunProgress.ts`, change the fetch URL from `/api/run?mode=…` to your production SSE route. Keep the same frame format (`data: {json}\n\n`) and event types — or adapt `events.ts` / `isRunEvent()` to match your wire contract.
+
+**Assumptions to revisit:**
+
+| Assumption | Where to change |
+|---|---|
+| Event types and fields | `src/lib/run-progress/events.ts` |
+| Stall timeout (10 s) | `STALL_TIMEOUT_MS` in `constants.ts` |
+| Step labels when missing | `DEFAULT_STEP_LABELS` in `constants.ts` |
+| Gradient / error / stall colours | `PROGRESS_*` constants in `constants.ts` |
+| Auth headers / cookies on the stream | fetch options in `useRunProgress.start()` |
+| Reconnect / resume after disconnect | currently **no** auto-reconnect by design — add if your backend supports resuming a run |
+| Platform-specific icons | today a single `fuse-icon.png`; your real component likely needs per-platform icon slots |
+| Server timestamps vs client | `ts` on events is diagnostic only; `startedAt` / `endedAt` in state are client wall-clock |
+
+### 4. Dependencies
+
+**Runtime:** `react`, `react-dom`, `next` (App Router). No UI kit.
+
+**Dev / optional:** Storybook + Vitest stack (see `package.json` devDependencies) if you want the stories and tests to come along.
+
+**Tailwind v4:** the component uses utility classes directly. If your app uses a different styling approach, the layout structure in `RunProgress.tsx` is still the reference — swap class names, keep the ARIA attributes.
+
+### 5. Server-side producer checklist
+
+Your backend stream should:
+
+- Emit `step_start` before work begins on each step.
+- Optionally emit `step_progress` with fractional progress during long steps (drives intra-step bar gliding).
+- Emit `step_complete` when a step finishes, or `step_error` to terminate with an error payload.
+- Emit `run_complete` once on success.
+- Stamp a stable `runId` on every frame.
+- Keep the connection open until terminal or client abort; respect client disconnect to stop work.
+
+---
+
+## Next.js 16 conventions (deltas from older training data)
+
+These are the non-obvious points that matter for this project — captured up front so we don't write code against an older mental model. Sourced from `node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/route.md` and `node_modules/next/dist/docs/01-app/02-guides/streaming.md` in the locally installed Next.js.
+
+### Route handlers (`app/api/<path>/route.ts`)
+
+- **Signature is `(request: Request | NextRequest, context?)`.** No `NextApiRequest`/`NextApiResponse` (that's Pages Router).
+- **Dynamic params are a `Promise`** as of v15: `{ params }: { params: Promise<{ slug: string }> }`. Our `/api/run` has no dynamic segment, so this doesn't bite us — but worth knowing.
+- **`GET` handlers default to dynamic** (changed in v15 from static). For our SSE endpoint we still set `export const dynamic = 'force-dynamic'` defensively, since any caching at all would defeat streaming.
+- **`runtime`** can be `'nodejs'` (default) or `'edge'`. We'll stick with `'nodejs'` — no runtime constraints needed.
+
+### Streaming via Web Streams API
+
+The streaming guide explicitly calls out **Server-Sent Events** as the canonical use case for raw streaming in route handlers. The recommended shape:
+
+```ts
+export async function GET(request: Request) {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+      // ...
+      controller.close();
+    },
+    cancel() {
+      // client aborted
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+      'X-Content-Type-Options': 'nosniff',
+    },
+  });
+}
+```
+
+- **Listen to `request.signal`** to detect client aborts; clear timers and call `controller.close()` from the `abort` handler (or use `cancel()` on the stream).
+- **`X-Accel-Buffering: no`** is needed if anything downstream (nginx, some CDNs) might buffer.

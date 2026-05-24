@@ -37,6 +37,7 @@ import {
 /** Mirrors the server-side `RunMode` union from `src/app/api/run/scenarios.ts`. */
 export type RunMode = 'happy' | 'error' | 'stall';
 
+/** Reduced run state, raw event log, and stream lifecycle controls. */
 export interface UseRunProgressResult {
   status: RunStatus;
   steps: readonly StepState[];
@@ -45,13 +46,9 @@ export interface UseRunProgressResult {
   startedAt: number | null;
   endedAt: number | null;
   lastEventAt: number | null;
-  /** Raw event log — handy for debugging and for the Storybook "Live" story. */
   events: readonly RunEvent[];
-  /** Begin a new run; cancels any in-flight stream first. */
   start: (mode: RunMode) => void;
-  /** Abort the in-flight stream and stop the stall loop. State is preserved. */
   stop: () => void;
-  /** Abort any in-flight stream and clear all derived state back to `idle`. */
   reset: () => void;
 }
 
@@ -71,6 +68,10 @@ function hookReducer(state: RunState, action: Action): RunState {
   }
 }
 
+/**
+ * Opens `GET /api/run`, parses SSE frames into {@link RunEvent}s, and reduces
+ * them into {@link RunState}. Detects stalls via rAF when events stop arriving.
+ */
 export function useRunProgress(): UseRunProgressResult {
   const [state, dispatch] = useReducer(hookReducer, initialRunState);
   const [events, setEvents] = useState<RunEvent[]>([]);
