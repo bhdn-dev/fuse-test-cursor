@@ -13,8 +13,8 @@
  *   slides backward, regardless of what the producer does with `target`.
  * - **Frame-rate independent**: `dt` comes from the rAF timestamp; capped at
  *   100 ms so a backgrounded tab waking up doesn't trigger a giant jump.
- * - **Terminal**: snap to `target` on `complete`; freeze in place on
- *   `error` / `stalled` / `idle`.
+ * - **Terminal**: snap to `target` on `complete`; reset to `0` on `idle`;
+ *   freeze in place on `error` / `stalled`.
  * - **`prefers-reduced-motion`**: snaps to `target` on every render, never
  *   starts an rAF loop. Reacts to the OS toggle without a remount.
  */
@@ -95,6 +95,13 @@ export function useSmoothProgress({
       setProgress(next);
     };
 
+    const write = (value: number): void => {
+      const next = clamp01(value);
+      if (next === progressRef.current) return;
+      progressRef.current = next;
+      setProgress(next);
+    };
+
     // Terminal: snap so the bar visibly reaches 100% on success.
     if (status === 'complete') {
       cancel();
@@ -102,8 +109,15 @@ export function useSmoothProgress({
       return;
     }
 
+    // Reset: return the bar to empty when the run is cleared.
+    if (status === 'idle') {
+      cancel();
+      write(0);
+      return;
+    }
+
     // Frozen states: stop animating, leave displayed progress where it is.
-    if (status === 'error' || status === 'stalled' || status === 'idle') {
+    if (status === 'error' || status === 'stalled') {
       cancel();
       return;
     }

@@ -241,7 +241,26 @@ describe('useSmoothProgress — lifecycle', () => {
   });
 
   test('does not animate while `idle`', () => {
-    renderHook(() => useSmoothProgress({ target: 0.5, status: 'idle' }));
+    const { result } = renderHook(() => useSmoothProgress({ target: 0.5, status: 'idle' }));
+    expect(result.current).toBe(0);
+    expect(rafQueue.size).toBe(0);
+  });
+
+  test('resets to 0 on `idle` after a run', () => {
+    const { result, rerender } = renderHook(
+      ({ status, target }: { status: RunStatus; target: number }) =>
+        useSmoothProgress({ target, status, decayRate: 6 }),
+      { initialProps: { status: 'running' as RunStatus, target: 0.8 } }
+    );
+
+    runFrames(result, 30);
+    expect(result.current).toBeGreaterThan(0);
+
+    act(() => {
+      rerender({ status: 'idle', target: 0 });
+    });
+
+    expect(result.current).toBe(0);
     expect(rafQueue.size).toBe(0);
   });
 
